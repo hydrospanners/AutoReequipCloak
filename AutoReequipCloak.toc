@@ -1,8 +1,9 @@
-﻿## Interface: 120005
+## Interface: 120005
 ## Title: AutoReequipCloak
 ## Notes: Re-equips your previous cloak after zoning with a teleport cloak equipped.
+## Author: Hydrospanners
 ## Version: 1.0.0
-## Category: General
+## Category: Equipment
 ## SavedVariablesPerCharacter: AutoReequipCloakDB
 
 AutoReequipCloak.lua
