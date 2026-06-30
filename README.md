@@ -30,3 +30,11 @@ Re-equips your previous cloak after zoning with a teleport cloak equipped.
 
 - `/arc status` or `/arc debug` — prints current and highest ilvl per slot.
 - See [TELEPORT_ITEMS.md](TELEPORT_ITEMS.md) for the list of recognised teleport item IDs.
+
+## Acknowledgements
+
+Inspired by the original [TeleportCloak](https://www.wowinterface.com/downloads/info26733-TeleportCloak.html) addon (also on [CurseForge](https://www.curseforge.com/wow/addons/teleportcloak)). AutoReequipCloak is a separate, independent implementation: it focuses on automatic back-slot re-equip after zoning and item-level safety warnings. It does not bundle or copy TeleportCloak code. The teleport item ID list draws on the same public game data and community references noted in [TELEPORT_ITEMS.md](TELEPORT_ITEMS.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE).
