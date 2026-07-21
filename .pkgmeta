@@ -1,0 +1,13 @@
+package-as: AutoReequipCloak
+enable-nolib-creation: no
+ignore:
+  - .github
+  - .gitignore
+  - .pkgmeta
+  - .publish-state.json
+  - AGENTS.md
+  - DESIGN.md
+  - TELEPORT_ITEMS.md
+  - docs
+  - README.md
+  - CHANGELOG.md
