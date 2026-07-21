@@ -5,6 +5,6 @@
 ## Version: 1.1.0
 ## Category: Equipment
 ## SavedVariablesPerCharacter: AutoReequipCloakDB
-# ## X-Curse-Project-ID: 000000
+## X-Curse-Project-ID: 1619102
 
 AutoReequipCloak.lua
