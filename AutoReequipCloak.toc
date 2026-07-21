@@ -1,9 +1,10 @@
-## Interface: 120005
+## Interface: 120007
 ## Title: AutoReequipCloak
-## Notes: Re-equips your previous cloak after zoning with a teleport cloak equipped.
+## Notes: Re-equips your real cloak after teleporting with a guild teleport cloak. Warns in instances when your gear looks unusually low.
 ## Author: Hydrospanners
-## Version: 1.0.0
+## Version: 1.1.0
 ## Category: Equipment
 ## SavedVariablesPerCharacter: AutoReequipCloakDB
+# ## X-Curse-Project-ID: 000000
 
 AutoReequipCloak.lua

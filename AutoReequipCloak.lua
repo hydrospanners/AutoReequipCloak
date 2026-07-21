@@ -1,7 +1,7 @@
 local INVSLOT_BACK_CONST = INVSLOT_BACK or 15
 local INVSLOT_NECK_CONST = INVSLOT_NECK or 2
 local INVSLOT_FEET_CONST = INVSLOT_FEET or 8
-local INVSLOT_BODY_CONST = INVSLOT_BODY or 4
+local INVSLOT_TABARD_CONST = INVSLOT_TABARD or 19
 local INVSLOT_FINGER1_CONST = INVSLOT_FINGER1 or 11
 local INVSLOT_FINGER2_CONST = INVSLOT_FINGER2 or 12
 local INVSLOT_TRINKET1_CONST = INVSLOT_TRINKET1 or 13
@@ -14,10 +14,12 @@ local LOW_ILVL_WARNING_POPUP_KEY = "AUTOREEQUIPCLOAK_LOW_ILVL_WARNING"
 
 local TELEPORT_ITEM_IDS_BY_SLOT = {
     [INVSLOT_BACK_CONST] = {
-        [65274] = true, -- Cloak of Coordination
-        [65360] = true, -- Cloak of Coordination (Guild Perk variant)
-        [63352] = true, -- Shroud of Cooperation
-        [63206] = true, -- Wrap of Unity
+        [65274] = true, -- Cloak of Coordination (Horde)
+        [65360] = true, -- Cloak of Coordination (Alliance)
+        [63352] = true, -- Shroud of Cooperation (Alliance)
+        [63353] = true, -- Shroud of Cooperation (Horde)
+        [63206] = true, -- Wrap of Unity (Alliance)
+        [63207] = true, -- Wrap of Unity (Horde)
     },
     [INVSLOT_NECK_CONST] = {
         [32757] = true, -- Blessed Medallion of Karabor
@@ -32,7 +34,7 @@ local TELEPORT_ITEM_IDS_BY_SLOT = {
         [28585] = true, -- Ruby Slippers
         [50287] = true, -- Boots of the Bay
     },
-    [INVSLOT_BODY_CONST] = {
+    [INVSLOT_TABARD_CONST] = {
         [46874] = true, -- Argent Crusader's Tabard
         [63379] = true, -- Baradin's Wardens Tabard
         [63378] = true, -- Hellscream's Reach Tabard
@@ -242,7 +244,7 @@ local function GetSlotName(slotID)
         [INVSLOT_FINGER1_CONST] = "Finger1",
         [INVSLOT_FINGER2_CONST] = "Finger2",
         [INVSLOT_FEET_CONST] = "Feet",
-        [INVSLOT_BODY_CONST] = "Tabard",
+        [INVSLOT_TABARD_CONST] = "Tabard",
         [INVSLOT_TRINKET1_CONST] = "Trinket1",
         [INVSLOT_TRINKET2_CONST] = "Trinket2",
     }
