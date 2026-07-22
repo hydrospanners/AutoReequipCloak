@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1 — 2026-07-22
+
+- Marked compatible with 12.1 alongside 12.0.7. Support for 12.0.5 is dropped.
+
 ## 1.1.0 — 2026-07-21
 
 - Fixed: tabard teleport items were watched on the shirt slot (4) instead of
