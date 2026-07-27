@@ -12,6 +12,27 @@ local LOW_TELEPORT_SLOT_ILVL_RATIO = 0.6
 local LOW_ILVL_WARNING_COOLDOWN_SECONDS = 300
 local LOW_ILVL_WARNING_POPUP_KEY = "AUTOREEQUIPCLOAK_LOW_ILVL_WARNING"
 
+-- All four Kirin Tor rings and their Inscribed/Etched/Runed upgrades teleport
+-- to Dalaran (Northrend). One shared table, referenced by both finger slots.
+local KIRIN_TOR_RING_IDS = {
+    [40585] = true, -- Signet of the Kirin Tor
+    [40586] = true, -- Band of the Kirin Tor
+    [44934] = true, -- Loop of the Kirin Tor
+    [44935] = true, -- Ring of the Kirin Tor
+    [45688] = true, -- Inscribed Band of the Kirin Tor
+    [45689] = true, -- Inscribed Loop of the Kirin Tor
+    [45690] = true, -- Inscribed Ring of the Kirin Tor
+    [45691] = true, -- Inscribed Signet of the Kirin Tor
+    [48954] = true, -- Etched Band of the Kirin Tor
+    [48955] = true, -- Etched Loop of the Kirin Tor
+    [48956] = true, -- Etched Ring of the Kirin Tor
+    [48957] = true, -- Etched Signet of the Kirin Tor
+    [51557] = true, -- Runed Signet of the Kirin Tor
+    [51558] = true, -- Runed Loop of the Kirin Tor
+    [51559] = true, -- Runed Ring of the Kirin Tor
+    [51560] = true, -- Runed Band of the Kirin Tor
+}
+
 local TELEPORT_ITEM_IDS_BY_SLOT = {
     [INVSLOT_BACK_CONST] = {
         [65274] = true, -- Cloak of Coordination (Horde)
@@ -24,12 +45,8 @@ local TELEPORT_ITEM_IDS_BY_SLOT = {
     [INVSLOT_NECK_CONST] = {
         [32757] = true, -- Blessed Medallion of Karabor
     },
-    [INVSLOT_FINGER1_CONST] = {
-        [44935] = true, -- Ring of the Kirin Tor
-    },
-    [INVSLOT_FINGER2_CONST] = {
-        [44935] = true, -- Ring of the Kirin Tor
-    },
+    [INVSLOT_FINGER1_CONST] = KIRIN_TOR_RING_IDS,
+    [INVSLOT_FINGER2_CONST] = KIRIN_TOR_RING_IDS,
     [INVSLOT_FEET_CONST] = {
         [28585] = true, -- Ruby Slippers
         [50287] = true, -- Boots of the Bay

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 — 2026-07-22
+
+- Now watches all 16 Kirin Tor rings (Band/Loop/Ring/Signet plus their
+  Inscribed, Etched and Runed upgrades) — previously only the base Ring of the
+  Kirin Tor was recognized, so swapping back after a Dalaran teleport only
+  worked with that one ring.
+
 ## 1.1.1 — 2026-07-22
 
 - Marked compatible with 12.1 alongside 12.0.7. Support for 12.0.5 is dropped.
