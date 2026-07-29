@@ -1,5 +1,14 @@
 package-as: AutoReequipCloak
 enable-nolib-creation: no
+
+# Use the hand-written changelog as the CurseForge file changelog instead of
+# the packager's auto-generated git log (staging commits are just
+# "release: vX.Y.Z", which tells users nothing). The ignore list below still
+# keeps CHANGELOG.md out of the addon zip itself.
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
 ignore:
   - .github
   - .gitignore
