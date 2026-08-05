@@ -1,16 +1,44 @@
-local INVSLOT_BACK_CONST = INVSLOT_BACK or 15
+local INVSLOT_HEAD_CONST = INVSLOT_HEAD or 1
 local INVSLOT_NECK_CONST = INVSLOT_NECK or 2
+local INVSLOT_SHOULDER_CONST = INVSLOT_SHOULDER or 3
+local INVSLOT_CHEST_CONST = INVSLOT_CHEST or 5
+local INVSLOT_WAIST_CONST = INVSLOT_WAIST or 6
+local INVSLOT_LEGS_CONST = INVSLOT_LEGS or 7
 local INVSLOT_FEET_CONST = INVSLOT_FEET or 8
-local INVSLOT_TABARD_CONST = INVSLOT_TABARD or 19
+local INVSLOT_WRIST_CONST = INVSLOT_WRIST or 9
+local INVSLOT_HAND_CONST = INVSLOT_HAND or 10
 local INVSLOT_FINGER1_CONST = INVSLOT_FINGER1 or 11
 local INVSLOT_FINGER2_CONST = INVSLOT_FINGER2 or 12
 local INVSLOT_TRINKET1_CONST = INVSLOT_TRINKET1 or 13
 local INVSLOT_TRINKET2_CONST = INVSLOT_TRINKET2 or 14
+local INVSLOT_BACK_CONST = INVSLOT_BACK or 15
+local INVSLOT_MAINHAND_CONST = INVSLOT_MAINHAND or 16
+local INVSLOT_OFFHAND_CONST = INVSLOT_OFFHAND or 17
+local INVSLOT_TABARD_CONST = INVSLOT_TABARD or 19
 local LOW_ILVL_RATIO = 0.95
-local LOW_CLOAK_ILVL_RATIO = 0.6
-local LOW_TELEPORT_SLOT_ILVL_RATIO = 0.6
+local LOW_SLOT_ILVL_RATIO = 0.6
 local LOW_ILVL_WARNING_COOLDOWN_SECONDS = 300
 local LOW_ILVL_WARNING_POPUP_KEY = "AUTOREEQUIPCLOAK_LOW_ILVL_WARNING"
+local REEQUIP_RETRY_INTERVAL_SECONDS = 0.5
+local REEQUIP_RETRY_MAX_ATTEMPTS = 20
+
+-- Equip locations that occupy both weapon slots, making an empty off-hand
+-- legitimate (two-handers, bows, guns/crossbows/wands, fishing poles).
+local TWO_HANDED_EQUIP_LOCS = {
+    ["INVTYPE_2HWEAPON"] = true,
+    ["INVTYPE_RANGED"] = true,
+    ["INVTYPE_RANGEDRIGHT"] = true,
+    ["INVTYPE_FISHINGPOLE"] = true,
+}
+
+-- Finger and trinket slots come in interchangeable pairs; a saved item found
+-- worn on the paired slot means the player rearranged it deliberately.
+local SIBLING_SLOT = {
+    [INVSLOT_FINGER1_CONST] = INVSLOT_FINGER2_CONST,
+    [INVSLOT_FINGER2_CONST] = INVSLOT_FINGER1_CONST,
+    [INVSLOT_TRINKET1_CONST] = INVSLOT_TRINKET2_CONST,
+    [INVSLOT_TRINKET2_CONST] = INVSLOT_TRINKET1_CONST,
+}
 
 -- All four Kirin Tor rings and their Inscribed/Etched/Runed upgrades teleport
 -- to Dalaran (Northrend). One shared table, referenced by both finger slots.
@@ -66,28 +94,46 @@ local TELEPORT_ITEM_IDS_BY_SLOT = {
     },
 }
 
+-- Every gear slot the low-gear warning watches and records personal bests
+-- for. Shirt and tabard are excluded from the generic below-your-best and
+-- empty-slot checks (their item level is meaningless), but the tabard's best
+-- is still tracked because the teleport-tabard tripwire compares against it.
+-- Empty slots warn once a best is recorded for them; the off-hand is exempt
+-- while the main hand holds a two-hand-type weapon.
+local ILVL_TRACKED_SLOT_IDS = {
+    INVSLOT_HEAD_CONST, INVSLOT_NECK_CONST, INVSLOT_SHOULDER_CONST,
+    INVSLOT_CHEST_CONST, INVSLOT_WAIST_CONST, INVSLOT_LEGS_CONST,
+    INVSLOT_FEET_CONST, INVSLOT_WRIST_CONST, INVSLOT_HAND_CONST,
+    INVSLOT_FINGER1_CONST, INVSLOT_FINGER2_CONST,
+    INVSLOT_TRINKET1_CONST, INVSLOT_TRINKET2_CONST,
+    INVSLOT_BACK_CONST, INVSLOT_MAINHAND_CONST, INVSLOT_OFFHAND_CONST,
+    INVSLOT_TABARD_CONST,
+}
+
+local ILVL_TRACKED_SLOT_SET = {}
+for _, slotID in ipairs(ILVL_TRACKED_SLOT_IDS) do
+    ILVL_TRACKED_SLOT_SET[slotID] = true
+end
+
 local frame = CreateFrame("Frame")
 
-local lastBackItemID = nil
-local savedPreviousCloakID = nil
+local lastItemIDBySlot = {}
+local savedPreviousItemIDBySlot = {}
 local lowIlvlWarnedAt = 0
 local pendingSafetyTimer = nil
 local lastWarningReason = "none"
+local reequipTicker = nil
+local reequipAttemptsLeft = 0
 
 local db = nil
 
 StaticPopupDialogs[LOW_ILVL_WARNING_POPUP_KEY] = {
-    text = "Check your gear - your item level is unusually low.\nCurrent: %s\nHighest seen: %s",
+    text = "%s",
     button1 = OKAY,
     timeout = 0,
     whileDead = true,
     hideOnEscape = true,
-    preferredIndex = STATICPOPUP_NUMDIALOGS,
 }
-
-local function GetEquippedBackItemID()
-    return GetInventoryItemID("player", INVSLOT_BACK_CONST)
-end
 
 local function GetCurrentEquippedItemLevel()
     if GetAverageItemLevel then
@@ -106,7 +152,7 @@ local function GetItemLevelForSlot(slotID)
         return nil
     end
 
-    local itemLevel = GetDetailedItemLevelInfo(itemLink)
+    local itemLevel = C_Item.GetDetailedItemLevelInfo(itemLink)
     if itemLevel and itemLevel > 0 then
         return itemLevel
     end
@@ -114,14 +160,9 @@ local function GetItemLevelForSlot(slotID)
     return nil
 end
 
-local function GetEquippedBackItemLevel()
-    return GetItemLevelForSlot(INVSLOT_BACK_CONST)
-end
-
 local function EnsureDB()
     AutoReequipCloakDB = AutoReequipCloakDB or {}
     AutoReequipCloakDB.highestEquippedItemLevel = tonumber(AutoReequipCloakDB.highestEquippedItemLevel) or 0
-    AutoReequipCloakDB.highestBackSlotItemLevel = tonumber(AutoReequipCloakDB.highestBackSlotItemLevel) or 0
     AutoReequipCloakDB.highestTrackedSlotItemLevels = AutoReequipCloakDB.highestTrackedSlotItemLevels or {}
     db = AutoReequipCloakDB
 end
@@ -141,39 +182,28 @@ local function UpdateHighestEquippedItemLevel()
     end
 end
 
-local function UpdateHighestBackSlotItemLevel()
-    if not db then
-        return
-    end
-
-    local backItemLevel = GetEquippedBackItemLevel()
-    if not backItemLevel then
-        return
-    end
-
-    if backItemLevel > db.highestBackSlotItemLevel then
-        db.highestBackSlotItemLevel = backItemLevel
-    end
-end
-
 local function IsTeleportItemInSlot(slotID, itemID)
     local idsForSlot = TELEPORT_ITEM_IDS_BY_SLOT[slotID]
     return idsForSlot and itemID and idsForSlot[itemID] == true
 end
 
-local function UpdateHighestTrackedSlotItemLevels()
-    if not db then
+local function UpdateHighestTrackedSlotItemLevel(slotID)
+    if not db or not ILVL_TRACKED_SLOT_SET[slotID] then
         return
     end
 
-    for slotID, _ in pairs(TELEPORT_ITEM_IDS_BY_SLOT) do
-        local currentItemLevel = GetItemLevelForSlot(slotID)
-        if currentItemLevel and currentItemLevel > 0 then
-            local previousBest = tonumber(db.highestTrackedSlotItemLevels[slotID]) or 0
-            if currentItemLevel > previousBest then
-                db.highestTrackedSlotItemLevels[slotID] = currentItemLevel
-            end
+    local currentItemLevel = GetItemLevelForSlot(slotID)
+    if currentItemLevel and currentItemLevel > 0 then
+        local previousBest = tonumber(db.highestTrackedSlotItemLevels[slotID]) or 0
+        if currentItemLevel > previousBest then
+            db.highestTrackedSlotItemLevels[slotID] = currentItemLevel
         end
+    end
+end
+
+local function UpdateHighestTrackedSlotItemLevels()
+    for _, slotID in ipairs(ILVL_TRACKED_SLOT_IDS) do
+        UpdateHighestTrackedSlotItemLevel(slotID)
     end
 end
 
@@ -184,6 +214,49 @@ local function IsDungeonOrRaidLikeInstance()
     end
 
     return instanceType == "party" or instanceType == "raid" or instanceType == "scenario"
+end
+
+local function GetSlotName(slotID)
+    local names = {
+        [INVSLOT_HEAD_CONST] = "Head",
+        [INVSLOT_NECK_CONST] = "Neck",
+        [INVSLOT_SHOULDER_CONST] = "Shoulder",
+        [INVSLOT_CHEST_CONST] = "Chest",
+        [INVSLOT_WAIST_CONST] = "Waist",
+        [INVSLOT_LEGS_CONST] = "Legs",
+        [INVSLOT_FEET_CONST] = "Feet",
+        [INVSLOT_WRIST_CONST] = "Wrist",
+        [INVSLOT_HAND_CONST] = "Hands",
+        [INVSLOT_FINGER1_CONST] = "Finger1",
+        [INVSLOT_FINGER2_CONST] = "Finger2",
+        [INVSLOT_TRINKET1_CONST] = "Trinket1",
+        [INVSLOT_TRINKET2_CONST] = "Trinket2",
+        [INVSLOT_BACK_CONST] = "Back",
+        [INVSLOT_MAINHAND_CONST] = "MainHand",
+        [INVSLOT_OFFHAND_CONST] = "OffHand",
+        [INVSLOT_TABARD_CONST] = "Tabard",
+    }
+    return names[slotID] or tostring(slotID)
+end
+
+local function DescribeSlotItem(slotID)
+    return GetInventoryItemLink("player", slotID) or GetSlotName(slotID)
+end
+
+local function IsWieldingTwoHander()
+    local mainHandLink = GetInventoryItemLink("player", INVSLOT_MAINHAND_CONST)
+    if not mainHandLink then
+        return false
+    end
+
+    local itemEquipLoc = select(9, C_Item.GetItemInfo(mainHandLink))
+    if not itemEquipLoc then
+        -- Item data not cached yet; assume the empty off-hand is fine rather
+        -- than risk a false warning.
+        return true
+    end
+
+    return TWO_HANDED_EQUIP_LOCS[itemEquipLoc] == true
 end
 
 local function WarnIfItemLevelIsUnusuallyLow()
@@ -200,30 +273,43 @@ local function WarnIfItemLevelIsUnusuallyLow()
         return
     end
 
-    local currentBackItemLevel = GetEquippedBackItemLevel()
-    local highestBackItemLevel = db.highestBackSlotItemLevel or 0
-    local isBackItemLevelSuspiciouslyLow = false
-    if currentBackItemLevel and highestBackItemLevel > 0 then
-        isBackItemLevelSuspiciouslyLow = currentBackItemLevel <= (highestBackItemLevel * LOW_CLOAK_ILVL_RATIO)
-    end
-
-    local lowTeleportSlots = {}
-    for slotID, _ in pairs(TELEPORT_ITEM_IDS_BY_SLOT) do
+    local lowTeleportLines = {}
+    local lowSlotLines = {}
+    local emptySlotNames = {}
+    for _, slotID in ipairs(ILVL_TRACKED_SLOT_IDS) do
         local equippedItemID = GetInventoryItemID("player", slotID)
-        if IsTeleportItemInSlot(slotID, equippedItemID) then
+        local highestSlotItemLevel = tonumber(db.highestTrackedSlotItemLevels[slotID]) or 0
+        if not equippedItemID then
+            -- The 14 armor/accessory slots are never legitimately empty; the
+            -- off-hand is, but only under a two-hand-type main weapon. Only
+            -- flag slots we have a recorded best for, so a fresh install (or
+            -- a character that never fills the slot) stays silent.
+            if highestSlotItemLevel > 0 and slotID ~= INVSLOT_TABARD_CONST then
+                local offHandUnderTwoHander = slotID == INVSLOT_OFFHAND_CONST and IsWieldingTwoHander()
+                if not offHandUnderTwoHander then
+                    emptySlotNames[#emptySlotNames + 1] = GetSlotName(slotID)
+                end
+            end
+        else
             local currentSlotItemLevel = GetItemLevelForSlot(slotID)
-            local highestSlotItemLevel = tonumber(db.highestTrackedSlotItemLevels and db.highestTrackedSlotItemLevels[slotID]) or 0
-            if currentSlotItemLevel and highestSlotItemLevel > 0 then
-                if currentSlotItemLevel <= (highestSlotItemLevel * LOW_TELEPORT_SLOT_ILVL_RATIO) then
-                    lowTeleportSlots[#lowTeleportSlots + 1] = slotID
+            if currentSlotItemLevel and highestSlotItemLevel > 0
+                and currentSlotItemLevel <= (highestSlotItemLevel * LOW_SLOT_ILVL_RATIO) then
+                local line = string.format("%s (%d vs best %d)",
+                    DescribeSlotItem(slotID), currentSlotItemLevel, highestSlotItemLevel)
+                if IsTeleportItemInSlot(slotID, equippedItemID) then
+                    lowTeleportLines[#lowTeleportLines + 1] = line
+                elseif slotID ~= INVSLOT_TABARD_CONST then
+                    lowSlotLines[#lowSlotLines + 1] = line
                 end
             end
         end
     end
 
-    local hasLowTeleportSlot = #lowTeleportSlots > 0
+    local hasLowTeleportSlot = #lowTeleportLines > 0
+    local hasEmptySlot = #emptySlotNames > 0
+    local hasLowSlot = #lowSlotLines > 0
     local isAverageItemLevelLow = equippedItemLevel <= (db.highestEquippedItemLevel * LOW_ILVL_RATIO)
-    if not hasLowTeleportSlot and not isBackItemLevelSuspiciouslyLow and not isAverageItemLevelLow then
+    if not hasLowTeleportSlot and not hasEmptySlot and not hasLowSlot and not isAverageItemLevelLow then
         lastWarningReason = "none"
         return
     end
@@ -234,70 +320,53 @@ local function WarnIfItemLevelIsUnusuallyLow()
     end
 
     lowIlvlWarnedAt = now
+    local detailParts = {}
+    if hasLowTeleportSlot then
+        detailParts[#detailParts + 1] = "Still wearing " .. table.concat(lowTeleportLines, ", ")
+    end
+    if hasEmptySlot then
+        detailParts[#detailParts + 1] = "Empty: " .. table.concat(emptySlotNames, ", ")
+    end
+    if hasLowSlot then
+        detailParts[#detailParts + 1] = "Way below your best: " .. table.concat(lowSlotLines, ", ")
+    end
     if hasLowTeleportSlot then
         lastWarningReason = "low_teleport_slot"
-    elseif isBackItemLevelSuspiciouslyLow then
-        lastWarningReason = "low_back_slot"
+    elseif hasEmptySlot then
+        lastWarningReason = "empty_slot"
+    elseif hasLowSlot then
+        lastWarningReason = "low_slot"
     else
         lastWarningReason = "low_average_ilvl"
     end
 
-    if hasLowTeleportSlot and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+    local detail = (#detailParts > 0) and table.concat(detailParts, ". ") or nil
+    if detail and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         DEFAULT_CHAT_FRAME:AddMessage(
-            "|cffff7f00AutoReequipCloak:|r Teleport slot item level looks unusually low. Check gear before starting."
+            "|cffff7f00AutoReequipCloak:|r " .. detail .. ". Check gear before starting."
         )
     end
-    StaticPopup_Show(
-        LOW_ILVL_WARNING_POPUP_KEY,
-        string.format("%.1f", equippedItemLevel),
-        string.format("%.1f", db.highestEquippedItemLevel)
-    )
-end
 
-local function GetSlotName(slotID)
-    local names = {
-        [INVSLOT_BACK_CONST] = "Back",
-        [INVSLOT_NECK_CONST] = "Neck",
-        [INVSLOT_FINGER1_CONST] = "Finger1",
-        [INVSLOT_FINGER2_CONST] = "Finger2",
-        [INVSLOT_FEET_CONST] = "Feet",
-        [INVSLOT_TABARD_CONST] = "Tabard",
-        [INVSLOT_TRINKET1_CONST] = "Trinket1",
-        [INVSLOT_TRINKET2_CONST] = "Trinket2",
-    }
-    return names[slotID] or tostring(slotID)
-end
-
-local function PrintDebugStatus()
-    EnsureDB()
-    local currentAvg = GetCurrentEquippedItemLevel() or 0
-    local currentBack = GetEquippedBackItemLevel() or 0
-    local highestAvg = db.highestEquippedItemLevel or 0
-    local highestBack = db.highestBackSlotItemLevel or 0
-
-    print(string.format("AutoReequipCloak: avg=%.1f highestAvg=%.1f back=%.1f highestBack=%.1f reason=%s",
-        currentAvg, highestAvg, currentBack, highestBack, lastWarningReason))
-
-    if db.highestTrackedSlotItemLevels then
-        for slotID, _ in pairs(TELEPORT_ITEM_IDS_BY_SLOT) do
-            local currentSlot = GetItemLevelForSlot(slotID) or 0
-            local highestSlot = tonumber(db.highestTrackedSlotItemLevels[slotID]) or 0
-            print(string.format("  %s ilvl=%.1f highest=%.1f", GetSlotName(slotID), currentSlot, highestSlot))
+    -- Lead with the low-average claim only when the average tripwire actually
+    -- fired; per-slot triggers get a neutral lead so the headline never
+    -- contradicts the healthy-looking averages shown below it.
+    local popupBody
+    if isAverageItemLevelLow then
+        popupBody = string.format(
+            "Check your gear. Your item level is unusually low.\nCurrent: %.1f  Highest seen: %.1f",
+            equippedItemLevel, db.highestEquippedItemLevel)
+        if detail then
+            popupBody = popupBody .. "\n" .. detail
         end
+    else
+        popupBody = "Check your gear before starting."
+        if detail then
+            popupBody = popupBody .. "\n" .. detail
+        end
+        popupBody = popupBody .. string.format(
+            "\nAverage: %.1f (best %.1f)", equippedItemLevel, db.highestEquippedItemLevel)
     end
-end
-
-local function IsTeleportCloak(itemID)
-    return IsTeleportItemInSlot(INVSLOT_BACK_CONST, itemID)
-end
-
-local function GetItemIDFromLink(link)
-    if not link then
-        return nil
-    end
-
-    local itemID = link:match("item:(%d+)")
-    return itemID and tonumber(itemID) or nil
+    StaticPopup_Show(LOW_ILVL_WARNING_POPUP_KEY, popupBody)
 end
 
 local function FindBagItemLinkByID(targetItemID)
@@ -308,9 +377,8 @@ local function FindBagItemLinkByID(targetItemID)
     for bag = 0, 5 do
         local slots = C_Container.GetContainerNumSlots(bag)
         for slot = 1, slots do
-            local link = C_Container.GetContainerItemLink(bag, slot)
-            if GetItemIDFromLink(link) == targetItemID then
-                return link
+            if C_Container.GetContainerItemID(bag, slot) == targetItemID then
+                return C_Container.GetContainerItemLink(bag, slot)
             end
         end
     end
@@ -318,62 +386,176 @@ local function FindBagItemLinkByID(targetItemID)
     return nil
 end
 
-local function TryReequipSavedCloak()
-    if not savedPreviousCloakID then
-        return false
+local function StopReequipTicker()
+    if reequipTicker then
+        reequipTicker:Cancel()
+        reequipTicker = nil
     end
-
-    if UnitAffectingCombat("player") then
-        return false
-    end
-
-    local currentlyEquipped = GetEquippedBackItemID()
-    if not IsTeleportCloak(currentlyEquipped) then
-        -- Current slot is no longer a tracked teleport cloak; clear stale state.
-        savedPreviousCloakID = nil
-        return false
-    end
-
-    local previousCloakLink = FindBagItemLinkByID(savedPreviousCloakID)
-    if not previousCloakLink then
-        savedPreviousCloakID = nil
-        return false
-    end
-
-    EquipItemByName(previousCloakLink, INVSLOT_BACK_CONST)
-
-    if GetEquippedBackItemID() == savedPreviousCloakID then
-        savedPreviousCloakID = nil
-        lastBackItemID = GetEquippedBackItemID()
-        UpdateHighestEquippedItemLevel()
-        UpdateHighestTrackedSlotItemLevels()
-        return true
-    end
-
-    return false
 end
 
-local function OnPlayerEquipmentChanged(slotID)
-    if slotID ~= INVSLOT_BACK_CONST then
+-- One pass over every slot with a pending swap-back. Equips complete
+-- asynchronously (the server confirms via PLAYER_EQUIPMENT_CHANGED), so this
+-- never judges an equip request in the frame it was issued — a later pass or
+-- the equipment event observes the result.
+local function TryReequipSavedItems()
+    if next(savedPreviousItemIDBySlot) == nil then
+        StopReequipTicker()
+        return "idle"
+    end
+
+    if UnitAffectingCombat("player") or UnitIsDeadOrGhost("player") then
+        return "blocked"
+    end
+
+    local anyPending = false
+    local anyMissing = false
+    for slotID, savedItemID in pairs(savedPreviousItemIDBySlot) do
+        local currentItemID = GetInventoryItemID("player", slotID)
+        if currentItemID == savedItemID then
+            savedPreviousItemIDBySlot[slotID] = nil
+            lastItemIDBySlot[slotID] = currentItemID
+        elseif not IsTeleportItemInSlot(slotID, currentItemID) then
+            -- The user equipped something else there on purpose; stop chasing.
+            savedPreviousItemIDBySlot[slotID] = nil
+        elseif SIBLING_SLOT[slotID] and GetInventoryItemID("player", SIBLING_SLOT[slotID]) == savedItemID then
+            -- The saved ring/trinket is worn on the paired slot: the player
+            -- rearranged it deliberately (this also stops a duplicate bag copy
+            -- from being equipped over the teleport item they placed). Say so
+            -- in one line — with two identical copies owned this can also be
+            -- a real stand-down, and stand-downs are never silent.
+            savedPreviousItemIDBySlot[slotID] = nil
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                local siblingLink = GetInventoryItemLink("player", SIBLING_SLOT[slotID])
+                DEFAULT_CHAT_FRAME:AddMessage(
+                    "|cffff7f00AutoReequipCloak:|r " .. (siblingLink or "Your item") .. " is on your other slot. Leaving it there."
+                )
+            end
+        else
+            local savedItemLink = FindBagItemLinkByID(savedItemID)
+            if savedItemLink then
+                C_Item.EquipItemByName(savedItemLink, slotID)
+                anyPending = true
+            else
+                -- Bag data can be empty right after a loading screen; keep the
+                -- saved item — the retry ticker decides when to give up.
+                anyMissing = true
+            end
+        end
+    end
+
+    if not anyPending and not anyMissing then
+        StopReequipTicker()
+        UpdateHighestEquippedItemLevel()
+        UpdateHighestTrackedSlotItemLevels()
+        return "done"
+    end
+
+    if anyMissing and not anyPending then
+        return "missing"
+    end
+
+    return "attempted"
+end
+
+local function GiveUpReequip(itemsAreMissing)
+    StopReequipTicker()
+    if next(savedPreviousItemIDBySlot) == nil then
         return
     end
 
-    local currentBackID = GetEquippedBackItemID()
-    if IsTeleportCloak(currentBackID) and lastBackItemID and not IsTeleportCloak(lastBackItemID) then
-        savedPreviousCloakID = lastBackItemID
+    wipe(savedPreviousItemIDBySlot)
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        if itemsAreMissing then
+            DEFAULT_CHAT_FRAME:AddMessage(
+                "|cffff7f00AutoReequipCloak:|r Couldn't find your previous gear in your bags. Swap it back manually."
+            )
+        else
+            DEFAULT_CHAT_FRAME:AddMessage(
+                "|cffff7f00AutoReequipCloak:|r Couldn't re-equip your previous gear in time. Swap it back manually."
+            )
+        end
+    end
+end
+
+local function StartReequipRetries()
+    if next(savedPreviousItemIDBySlot) == nil then
+        return
     end
 
-    lastBackItemID = currentBackID
+    reequipAttemptsLeft = REEQUIP_RETRY_MAX_ATTEMPTS
+    if reequipTicker then
+        return
+    end
+
+    reequipTicker = C_Timer.NewTicker(REEQUIP_RETRY_INTERVAL_SECONDS, function()
+        local status = TryReequipSavedItems()
+        if status == "blocked" then
+            return -- in combat or dead: equips are impossible, don't burn attempts
+        end
+
+        reequipAttemptsLeft = reequipAttemptsLeft - 1
+        if reequipAttemptsLeft <= 0 and reequipTicker then
+            GiveUpReequip(status == "missing")
+        end
+    end)
+end
+
+local function PrintDebugStatus()
+    EnsureDB()
+    local currentAvg = GetCurrentEquippedItemLevel() or 0
+    local highestAvg = db.highestEquippedItemLevel or 0
+
+    print(string.format("AutoReequipCloak: avg=%.1f highestAvg=%.1f reason=%s",
+        currentAvg, highestAvg, lastWarningReason))
+
+    for _, slotID in ipairs(ILVL_TRACKED_SLOT_IDS) do
+        local currentSlot = GetItemLevelForSlot(slotID) or 0
+        local highestSlot = tonumber(db.highestTrackedSlotItemLevels[slotID]) or 0
+        print(string.format("  %s ilvl=%.1f highest=%.1f", GetSlotName(slotID), currentSlot, highestSlot))
+    end
+
+    for slotID, savedItemID in pairs(savedPreviousItemIDBySlot) do
+        local displayName = FindBagItemLinkByID(savedItemID)
+            or (C_Item.GetItemNameByID and C_Item.GetItemNameByID(savedItemID))
+            or ("item " .. savedItemID)
+        print(string.format("  pending swap-back: %s -> %s", GetSlotName(slotID), displayName))
+    end
+end
+
+local function OnPlayerEquipmentChanged(slotID)
+    local isTeleportTrackedSlot = TELEPORT_ITEM_IDS_BY_SLOT[slotID] ~= nil
+    if not isTeleportTrackedSlot and not ILVL_TRACKED_SLOT_SET[slotID] then
+        return
+    end
+
+    if isTeleportTrackedSlot then
+        local currentItemID = GetInventoryItemID("player", slotID)
+
+        if savedPreviousItemIDBySlot[slotID] and currentItemID == savedPreviousItemIDBySlot[slotID] then
+            -- The saved item is back on (equipped by us or by hand); done chasing it.
+            savedPreviousItemIDBySlot[slotID] = nil
+            if next(savedPreviousItemIDBySlot) == nil then
+                StopReequipTicker()
+            end
+        elseif IsTeleportItemInSlot(slotID, currentItemID)
+            and lastItemIDBySlot[slotID]
+            and not IsTeleportItemInSlot(slotID, lastItemIDBySlot[slotID]) then
+            savedPreviousItemIDBySlot[slotID] = lastItemIDBySlot[slotID]
+        end
+
+        lastItemIDBySlot[slotID] = currentItemID
+    end
+
     UpdateHighestEquippedItemLevel()
-    UpdateHighestBackSlotItemLevel()
-    UpdateHighestTrackedSlotItemLevels()
+    UpdateHighestTrackedSlotItemLevel(slotID)
 end
 
 local function OnPlayerLogin()
     EnsureDB()
-    lastBackItemID = GetEquippedBackItemID()
+    for slotID, _ in pairs(TELEPORT_ITEM_IDS_BY_SLOT) do
+        lastItemIDBySlot[slotID] = GetInventoryItemID("player", slotID)
+    end
     UpdateHighestEquippedItemLevel()
-    UpdateHighestBackSlotItemLevel()
     UpdateHighestTrackedSlotItemLevels()
 
     SLASH_AUTOREEQUIPCLOAK1 = "/arc"
@@ -388,9 +570,7 @@ local function OnPlayerLogin()
 end
 
 local function RunSafetyChecks()
-    TryReequipSavedCloak()
     UpdateHighestEquippedItemLevel()
-    UpdateHighestBackSlotItemLevel()
     UpdateHighestTrackedSlotItemLevels()
     WarnIfItemLevelIsUnusuallyLow()
 end
@@ -410,6 +590,8 @@ frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 frame:RegisterEvent("PLAYER_AVG_ITEM_LEVEL_UPDATE")
 frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("LOADING_SCREEN_DISABLED")
+frame:RegisterEvent("BAG_UPDATE_DELAYED")
 frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 frame:SetScript("OnEvent", function(_, event, arg1)
@@ -425,12 +607,34 @@ frame:SetScript("OnEvent", function(_, event, arg1)
 
     if event == "PLAYER_AVG_ITEM_LEVEL_UPDATE" then
         UpdateHighestEquippedItemLevel()
-        UpdateHighestBackSlotItemLevel()
-        UpdateHighestTrackedSlotItemLevels()
         return
     end
 
-    if event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_REGEN_ENABLED" then
+    if event == "PLAYER_ENTERING_WORLD" or event == "LOADING_SCREEN_DISABLED" then
+        -- Arrival moments are the ONLY points that arm the swap-back, so a
+        -- teleport item that is equipped but not yet used is never removed
+        -- out from under the player.
+        StartReequipRetries()
+        if reequipTicker then
+            TryReequipSavedItems()
+        end
+        ScheduleSafetyChecks()
+        return
+    end
+
+    if event == "BAG_UPDATE_DELAYED" or event == "PLAYER_REGEN_ENABLED" then
+        -- Assist an already-armed swap-back (bags settled / combat ended);
+        -- these must never arm it themselves.
+        if reequipTicker then
+            TryReequipSavedItems()
+        end
+        if event == "PLAYER_REGEN_ENABLED" then
+            ScheduleSafetyChecks()
+        end
+        return
+    end
+
+    if event == "ZONE_CHANGED_NEW_AREA" then
         ScheduleSafetyChecks()
     end
 end)
