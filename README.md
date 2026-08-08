@@ -21,11 +21,15 @@ exists.
 
 1. **Remember.** When you equip a recognized teleport item over a normal
    item, the replaced item is remembered, per slot. Swapping from one
-   teleport item to another keeps the original remembered.
-2. **Restore.** When you arrive, the moment the loading screen ends, every
-   remembered item is re-equipped into its own slot. It retries for about ten
-   seconds, so a slow loading screen or unsettled bag data can't make it
-   miss.
+   teleport item to another keeps the original remembered. The memory is
+   saved with your character: logging out or reloading before you arrive
+   doesn't lose it.
+2. **Restore.** When the teleport cast finishes, or at the latest when the
+   loading screen ends, every remembered item is re-equipped into its own
+   slot. A same-city teleport that just blinks you across with no loading
+   screen counts too, and a disconnect mid-swap finishes on your next
+   login. It retries for about ten seconds, so a slow loading screen or
+   unsettled bag data can't make it miss.
 3. **Verify.** The addon confirms the swap actually happened on your
    character before it forgets. If it can't finish in time, it tells you in
    chat instead of failing silently.
@@ -72,7 +76,10 @@ once. No false positives on day one.
 ## Recognized teleport items
 
 Swap-back covers every slot below; the same list feeds tripwire 1, so a
-teleport item that somehow stays on still gets flagged at the door.
+teleport item that somehow stays on still gets flagged at the door. Tabards
+are the one exception: they carry no stats, so the door check has nothing to
+measure and stays quiet for them. The once-per-item login notice covers
+teleport tabards instead.
 
 | Slot | Items |
 |------|-------|
@@ -97,9 +104,11 @@ issue](../../issues).
 
 ## Honest limitations
 
-- The pending swap-back lives in memory: if you log out or `/reload` between
-  equipping the teleport item and arriving, the addon forgets. The warning
-  tripwires are the safety net for exactly that case.
+- The swap-back only knows items it saw replace something. Equipped over an
+  empty slot, before the addon was installed, or while it was disabled,
+  there is nothing to restore. The first login that notices says so in one
+  chat line, once per item, and the warning tripwires stay as the safety
+  net.
 - Any loading screen triggers the restore, not just teleports. Equip a
   teleport item and then walk into a dungeon instead, and your real gear
   comes back. (Probably what you wanted anyway.)
@@ -108,10 +117,12 @@ issue](../../issues).
   an identical copy is worn on your other ring/trinket slot, the addon
   assumes you rearranged on purpose and leaves it, saying so in chat.
 
-## Command
+## Commands
 
 - `/arc status` (or `/arc debug`) prints current vs. best item level for
   every tracked slot, and the reason for the last warning.
+- `/arc log` prints the last 40 swap-back decisions (remember, restore,
+  stand-down, give-up), timestamped. `/arc clearlog` empties it.
 
 ## Installation
 
