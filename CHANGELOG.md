@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.3.1 - 2026-08-08
+
+- A teleport without a loading screen never triggered the restore: using the
+  cloak while already in its destination city is an instant blink, and the
+  addon only listened for loading-screen arrivals. The finished teleport
+  cast itself now arms the restore, so the swap lands either way.
+- The remembered gear now survives logging out and `/reload`. Equip the
+  teleport cloak, log off for the night, port the next morning, and the swap
+  still happens. Before, any logout or reload between equipping and arriving
+  silently emptied the addon's memory. This was the easiest way to end up
+  "still wearing the cloak" with no error anywhere.
+- Same protection after landing: if you disconnect or reload right as you
+  arrive, before the swap finishes, it completes on your next login.
+- Fixed two more silent ways the swap-back could die: an equip that passes
+  through an empty slot no longer breaks the remembering, and a slot that
+  reads as empty right after a loading screen is no longer mistaken for a
+  deliberate gear change.
+- Logging in wearing a teleport item the addon has no record for (equipped
+  over an empty slot, before this version, or while the addon was off) now
+  gets one chat line saying it won't be swapped back automatically, instead
+  of silence after the teleport. Once per item, not every login.
+- New: `/arc log` prints the addon's last 40 decisions: every remember,
+  restore, stand-down and give-up, timestamped. If a swap ever misses again,
+  the log says why. `/arc clearlog` empties it.
+
 ## 1.3.0 - 2026-08-06
 
 - Fixed the big one: the swap-back after a teleport never actually worked, in
