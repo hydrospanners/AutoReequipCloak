@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.2 - 2026-08-14
+
+- Marked compatible with patch 12.1. No behavior changes.
+
 ## 1.3.1 - 2026-08-08
 
 - A teleport without a loading screen never triggered the restore: using the
