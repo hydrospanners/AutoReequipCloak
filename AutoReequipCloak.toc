@@ -1,4 +1,4 @@
-## Interface: 120100
+## Interface: 120100, 120105
 ## Title: AutoReequipCloak
 ## Notes: Re-equips your real gear after you use a wearable teleport item, like the Guild Cloaks. Warns in instances when your gear looks unusually low.
 ## Author: Hydrospanners
